@@ -1,5 +1,5 @@
 # ShelfReady Unified GUI
-import os, sys, subprocess, json, tkinter as tk
+import os, sys, subprocess, json, threading, tkinter as tk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk
 
@@ -9,13 +9,13 @@ PY = sys.executable
 NAVY      = "#1a3a6b"
 NAVY_DARK = "#0f2548"
 NAVY_LT   = "#2b4c8c"
-SLATE     = "#1e2d40"
-SLATE_MD  = "#1e293b"
-GREY      = "#cbd5e0"
-GREY_LT   = "#edf2f7"
+SLATE     = "#111e2e"
+SLATE_MD  = "#0e1929"
+GREY      = "#b0bccb"
+GREY_LT   = "#e2e8f0"
 BG        = "#f0f2f5"
 PANEL     = "#ffffff"
-BLACK     = "#1a202c"
+BLACK     = "#0d1117"
 WHITE     = "#ffffff"
 LOG_BG    = "#0d1117"
 LOG_FG    = "#8b9db8"
@@ -202,8 +202,17 @@ def do_run():
         messagebox.showerror("Error", "Select an input (file / folder / zip).")
         return
 
-    code, output = run_cmd(args)
+    run_btn.config(state="disabled", bg=SLATE_MD, cursor="",
+                   text="  PROCESSING…")
 
+    def worker():
+        code, output = run_cmd(args)
+        root.after(0, lambda: _finish(code, output, out_path))
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
+def _finish(code, output, out_path):
     log.config(state="normal")
     log.delete("1.0", "end")
     log.insert("end", "$ image_toolkit [args]\n\n", "cmd")
@@ -250,6 +259,9 @@ def do_run():
                 v_size.set(f"Output: {im.size[0]} x {im.size[1]} px")
         except Exception:
             pass
+
+    run_btn.config(state="normal", bg=NAVY, cursor="hand2",
+                   text="  RUN PROCESSING")
 
     messagebox.showinfo(
         "ShelfReady",
@@ -445,11 +457,12 @@ mkl(xf, "validate=report · adaptive=auto-fix · strict=fail",
 
 rf = tk.Frame(left, bg=BG)
 rf.pack(fill="x", padx=6, pady=8)
-tk.Button(rf, text="  RUN PROCESSING", command=do_run,
-          bg=NAVY, fg=WHITE,
-          activebackground=NAVY_DARK, activeforeground=WHITE,
-          font=F_RUN, relief="flat", height=2,
-          cursor="hand2").pack(fill="x")
+run_btn = tk.Button(rf, text="  RUN PROCESSING", command=do_run,
+                    bg=NAVY, fg=WHITE,
+                    activebackground=NAVY_DARK, activeforeground=WHITE,
+                    font=F_RUN, relief="flat", height=2,
+                    cursor="hand2")
+run_btn.pack(fill="x")
 
 # ── LOG ───────────────────────────────────────────────────────────────────────
 

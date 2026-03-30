@@ -1,6 +1,7 @@
-import os, argparse, zipfile, sys, tempfile
+import os, argparse, zipfile, sys, tempfile, concurrent.futures
 from collections import deque
 import numpy as np
+from scipy.ndimage import label as _ndlabel
 try:
     import pillow_avif
 except Exception:
@@ -245,7 +246,8 @@ def save_jpg(im, out_path, quality=95, progressive=True, optimize=True, dpi=None
     im.save(out_path, "JPEG", **kw)
 
 def rgb_to_hsv01(arr):
-    r,g,b = arr[...,0]/255.0, arr[...,1]/255.0, arr[...,2]/255.0
+    f = arr.astype(np.float32) / 255.0
+    r, g, b = f[..., 0], f[..., 1], f[..., 2]
     cmax = np.maximum(np.maximum(r,g), b)
     cmin = np.minimum(np.minimum(r,g), b)
     d = cmax - cmin
@@ -412,27 +414,18 @@ def analyze_image_quality(im):
         }
     }
 def flood_from_edges(allowed):
-    h, w = allowed.shape
-    visited = np.zeros((h,w), dtype=bool)
-    from collections import deque
-    q = deque()
-    q.extend([(0,x) for x in range(w)])
-    q.extend([(h-1,x) for x in range(w)])
-    q.extend([(y,0) for y in range(h)])
-    q.extend([(y,w-1) for y in range(h)])
-    while q:
-        y,x = q.popleft()
-        if visited[y,x] or not allowed[y,x]: continue
-        visited[y,x] = True
-        if y>0: q.append((y-1,x))
-        if y<h-1: q.append((y+1,x))
-        if x>0: q.append((y,x-1))
-        if x<w-1: q.append((y,x+1))
-    return visited
+    labeled, _ = _ndlabel(allowed)
+    border = np.concatenate([labeled[0, :], labeled[-1, :],
+                              labeled[:, 0], labeled[:, -1]])
+    ids = set(border.tolist())
+    ids.discard(0)
+    if not ids:
+        return np.zeros(allowed.shape, dtype=bool)
+    return np.isin(labeled, list(ids))
 def build_bg_mask(rgb_u8, mode="auto", top_clean_pct=0.0):
     s, v = rgb_to_hsv01(rgb_u8)
     bg_med = border_median_color(rgb_u8)
-    dist = np.sqrt(((rgb_u8 - bg_med)**2).sum(axis=-1))
+    dist = np.sqrt(((rgb_u8.astype(np.float32) - bg_med.astype(np.float32))**2).sum(axis=-1))
 
     # Check if background is already near-white (clean product image)
     # Use both median AND corner samples to handle shadows at edges
@@ -526,55 +519,15 @@ def build_bg_mask(rgb_u8, mode="auto", top_clean_pct=0.0):
         bg_mask[:max(1, top), :] = bg_mask[:max(1, top), :] | (top_dist < 50)
     return bg_mask
 def largest_component_only(nonwhite_mask):
-    H, W = nonwhite_mask.shape
-    visited = np.zeros((H, W), dtype=bool)
-    labels = np.zeros((H, W), dtype=np.int32)
-    sizes = []; label = 0
-    from collections import deque
-    q = deque()
-    for y in range(H):
-        for x in range(W):
-            if nonwhite_mask[y, x] and not visited[y, x]:
-                label += 1; q.append((y, x)); visited[y, x] = True; count = 0; labels[y, x] = label
-                while q:
-                    yy, xx = q.popleft(); count += 1
-                    for dy, dx in ((1,0),(-1,0),(0,1),(0,-1)):
-                        ny, nx = yy+dy, xx+dx
-                        if 0 <= ny < H and 0 <= nx < W and nonwhite_mask[ny, nx] and not visited[ny, nx]:
-                            visited[ny, nx] = True; labels[ny, nx] = label; q.append((ny, nx))
-                sizes.append((label, count))
-    if not sizes: return nonwhite_mask
-    keep_label = max(sizes, key=lambda t: t[1])[0]
-    return (labels == keep_label)
+    labeled, n = _ndlabel(nonwhite_mask)
+    if n == 0:
+        return nonwhite_mask
+    counts = np.bincount(labeled.ravel())
+    counts[0] = 0
+    return labeled == counts.argmax()
 
 def label_components(mask):
-    """
-    Label connected components in a boolean mask using BFS.
-    Returns (labels array, number of components).
-    """
-    H, W = mask.shape
-    visited = np.zeros((H, W), dtype=bool)
-    labels = np.zeros((H, W), dtype=np.int32)
-    label = 0
-    q = deque()
-
-    for y in range(H):
-        for x in range(W):
-            if mask[y, x] and not visited[y, x]:
-                label += 1
-                q.append((y, x))
-                visited[y, x] = True
-                labels[y, x] = label
-                while q:
-                    yy, xx = q.popleft()
-                    for dy, dx in ((1,0),(-1,0),(0,1),(0,-1)):
-                        ny, nx = yy+dy, xx+dx
-                        if 0 <= ny < H and 0 <= nx < W and mask[ny, nx] and not visited[ny, nx]:
-                            visited[ny, nx] = True
-                            labels[ny, nx] = label
-                            q.append((ny, nx))
-
-    return labels, label
+    return _ndlabel(mask)
 
 def detect_and_remove_overlays(rgb, product_mask):
     """
@@ -947,17 +900,40 @@ def process_file(in_path, out_path=None, op="convert", size=1500, allow_upscale=
     return out_path
 
 def process_folder(in_dir, out_dir=None, **kw):
-    if out_dir is None: out_dir = os.path.join(in_dir, "_out")
-    os.makedirs(out_dir, exist_ok=True); count=0
+    if out_dir is None:
+        out_dir = os.path.join(in_dir, "_out")
+    os.makedirs(out_dir, exist_ok=True)
+
+    tasks = []
     for root, dirs, files in os.walk(in_dir):
-        rel = os.path.relpath(root, in_dir); rel = "" if rel=="." else rel
-        dst_root = os.path.join(out_dir, rel); os.makedirs(dst_root, exist_ok=True)
+        rel = os.path.relpath(root, in_dir)
+        rel = "" if rel == "." else rel
+        dst_root = os.path.join(out_dir, rel)
+        os.makedirs(dst_root, exist_ok=True)
         for f in files:
             if f.lower().endswith(SUPPORTED_EXTS):
-                src = os.path.join(root, f); base = os.path.splitext(f)[0]
-                dst = os.path.join(dst_root, base + ".jpg")
-                try: process_file(src, dst, **kw); count+=1
-                except Exception as e: print("[X] Failed:", src, "|", e)
+                src = os.path.join(root, f)
+                dst = os.path.join(dst_root, os.path.splitext(f)[0] + ".jpg")
+                tasks.append((src, dst))
+
+    count = 0
+    workers = min(os.cpu_count() or 1, max(len(tasks), 1), 4)
+
+    def _do(args):
+        src, dst = args
+        try:
+            process_file(src, dst, **kw)
+            return None
+        except Exception as e:
+            return f"[X] Failed: {src} | {e}"
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+        for msg in ex.map(_do, tasks):
+            if msg:
+                print(msg)
+            else:
+                count += 1
+
     return out_dir, count
 def process_zip(in_zip, out_zip="converted_cleaned.zip", **kw):
     with tempfile.TemporaryDirectory() as din, tempfile.TemporaryDirectory() as dout:
