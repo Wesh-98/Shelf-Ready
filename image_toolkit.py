@@ -481,9 +481,13 @@ def build_bg_mask(rgb_u8, mode="auto", top_clean_pct=0.0):
     # Detect shadows (darker, low saturation areas) for ALL backgrounds
     # Shadows are grayish areas - low saturation, medium-to-low brightness
     if bg_is_white:
-        # For white backgrounds, only detect shadows near the edges using color distance
-        # Don't use brightness/saturation criteria which can match product areas
-        shadow_mask = (v > 0.7) & (s < 0.10) & (dist < 40)
+        # For white backgrounds, use tight distance-only shadow detection.
+        # The brightness + saturation criteria used for colored backgrounds are too broad
+        # here — they catch white/grey product surfaces (wrapper ends, labels, caps) because
+        # those areas are also bright, low-saturation, and close to white.
+        # Keeping dist < 25 only catches near-pure-white areas (true dead-space / soft shadow),
+        # not the product packaging itself.
+        shadow_mask = (s < 0.07) & (dist < 25)
     else:
         # For colored backgrounds, shadows are darker with some color similarity
         shadow_mask = (v < 0.7) & (s < 0.2) & (dist < 60)
@@ -494,9 +498,11 @@ def build_bg_mask(rgb_u8, mode="auto", top_clean_pct=0.0):
     gy = np.abs(np.roll(lum, -1, axis=0) - lum)
     gx = np.abs(np.roll(lum, -1, axis=1) - lum)
     grad = np.maximum(gx, gy)
-    # Edge threshold: lower for desaturated backgrounds (beige/cream) to protect product edges
-    # Normal threshold for white or saturated colored backgrounds
-    if bg_is_white or bg_sat > 0.2:
+    # For white backgrounds use a lower edge threshold so the flood stops at the softer
+    # product–background boundary (e.g. rounded wrapper ends that fade gradually into white).
+    if bg_is_white:
+        edge_thresh = 0.08 if mode != "aggressive" else 0.12
+    elif bg_sat > 0.2:
         edge_thresh = 0.12 if mode != "aggressive" else 0.16
     else:
         edge_thresh = 0.08  # Desaturated backgrounds need tighter edge protection
@@ -662,6 +668,47 @@ def square_canvas(im_rgb, size=1500, fit_mode="pad", target_fill=0.84,
         y0 = int((new_h - size) * (1 - vertical_bias))
         x0 = max(0, min(x0, new_w - size)); y0 = max(0, min(y0, new_h - size))
         return im.crop((x0, y0, x0+size, y0+size))
+
+    def _apply_scale(src, ratio, allow_up, no_dn):
+        if (ratio > 1 and allow_up) or (ratio < 1 and not no_dn):
+            return src.resize((int(src.width * ratio), int(src.height * ratio)),
+                               Image.Resampling.LANCZOS)
+        return src.copy()
+
+    if fit_mode == "fill_height":
+        # Scale so product HEIGHT fills target_fill of canvas; width follows aspect ratio.
+        # If the scaled width would overflow the canvas, fall back to width constraint.
+        target_h = int(size * target_fill)
+        im = _apply_scale(im_rgb, target_h / H, allow_upscale, no_downscale)
+        if im.width > size:
+            im = _apply_scale(im, size / im.width, allow_upscale, no_downscale)
+
+        canvas = Image.new("RGB", (size, size), (255, 255, 255))
+        x = (size - im.width) // 2
+        top_pad = max(20, min_top_pad_px // 3)
+        y = max(top_pad, (size - im.height) // 2)
+        y = min(y, max(0, size - im.height - top_pad))
+        canvas.paste(im, (x, y))
+        return canvas
+
+    if fit_mode == "fill_width":
+        # Scale so product WIDTH fills target_fill of canvas; height follows aspect ratio.
+        # Designed for wide/landscape products (protein bars, flat-packs) so the left and
+        # right ends reach the canvas edges with no white side-space.
+        # target_fill=0.99 → bar nearly edge-to-edge; =1.0 → truly edge-to-edge.
+        # If the scaled height overflows, fall back to height constraint instead.
+        target_w = int(size * target_fill)
+        im = _apply_scale(im_rgb, target_w / W, allow_upscale, no_downscale)
+        if im.height > size:
+            im = _apply_scale(im, size / im.height, allow_upscale, no_downscale)
+
+        canvas = Image.new("RGB", (size, size), (255, 255, 255))
+        # Centre horizontally — for target_fill≥1 this will be 0 (flush to edges)
+        x = max(0, (size - im.width) // 2)
+        # Always dead-centre vertically; do NOT apply min_top_pad for landscape products
+        y = max(0, (size - im.height) // 2)
+        canvas.paste(im, (x, y))
+        return canvas
 
     # PAD mode - Scale product to fill target_fill of canvas, then center on white
     im = im_rgb.copy()
@@ -899,7 +946,7 @@ def process_file(in_path, out_path=None, op="convert", size=1500, allow_upscale=
 
     return out_path
 
-def process_folder(in_dir, out_dir=None, **kw):
+def process_folder(in_dir, out_dir=None, out_prefix="", out_suffix="", **kw):
     if out_dir is None:
         out_dir = os.path.join(in_dir, "_out")
     os.makedirs(out_dir, exist_ok=True)
@@ -913,7 +960,8 @@ def process_folder(in_dir, out_dir=None, **kw):
         for f in files:
             if f.lower().endswith(SUPPORTED_EXTS):
                 src = os.path.join(root, f)
-                dst = os.path.join(dst_root, os.path.splitext(f)[0] + ".jpg")
+                stem = os.path.splitext(f)[0]
+                dst = os.path.join(dst_root, f"{out_prefix}{stem}{out_suffix}.jpg")
                 tasks.append((src, dst))
 
     count = 0
@@ -949,9 +997,10 @@ def main():
     p.add_argument("--in", dest="in_path"); p.add_argument("--out", dest="out_path", default=None)
     p.add_argument("--in_dir", dest="in_dir"); p.add_argument("--out_dir", dest="out_dir", default=None)
     p.add_argument("--in_zip", dest="in_zip"); p.add_argument("--out_zip", dest="out_zip", default="converted_cleaned.zip")
+    p.add_argument("--out_prefix", default=""); p.add_argument("--out_suffix", default="")
     p.add_argument("--op", choices=["convert","clean","both"], default="convert")
     p.add_argument("--work_on", choices=["image","canvas"], default="image")
-    p.add_argument("--fit_mode", choices=["pad","fit","crop_fill"], default="pad")
+    p.add_argument("--fit_mode", choices=["pad","fit","crop_fill","fill_height","fill_width"], default="pad")
     p.add_argument("--size", type=int, default=1500)
     p.add_argument("--allow_upscale", action="store_true"); p.add_argument("--no_downscale", action="store_true")
     p.add_argument("--mode", choices=["safe","auto","aggressive"], default="auto")
@@ -994,7 +1043,8 @@ def main():
         fit_mode=args.fit_mode, target_fill=args.target_fill, min_top_pad_px=args.min_top_pad_px, vertical_bias=args.vertical_bias,
         white_floor=args.white_floor, neutrality_tol=args.neutrality_tol, no_bg_clean=args.no_bg_clean, no_downscale=args.no_downscale,
         qty_badge=args.qty_badge, qc_enabled=args.qc, qc_mode=args.qc_mode,
-        auto_work_on=args.auto_work_on, auto_enhance=args.auto_enhance
+        auto_work_on=args.auto_work_on, auto_enhance=args.auto_enhance,
+        out_prefix=args.out_prefix, out_suffix=args.out_suffix
     )
 
     performed = False

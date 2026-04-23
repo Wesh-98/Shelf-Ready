@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # ShelfReady Unified GUI
 import os, sys, subprocess, json, threading, tkinter as tk
 from tkinter import filedialog, messagebox
@@ -5,7 +6,25 @@ from PIL import Image, ImageTk
 
 PY = sys.executable
 
-# ── Palette ──────────────────────────────────────────────────────────────────
+# ── Before/after state ────────────────────────────────────────────────────────
+_orig_path = None
+_proc_path = None
+_showing_orig = False
+
+# ── Queue state ───────────────────────────────────────────────────────────────
+_queue_files = []
+
+# ── Platform presets ──────────────────────────────────────────────────────────
+PLATFORM_PRESETS = {
+    "Custom":  {},
+    "Amazon":  {"size": "2000", "quality": "95"},
+    "Shopify": {"size": "2048", "quality": "90"},
+    "eBay":    {"size": "1600", "quality": "85"},
+    "Etsy":    {"size": "2000", "quality": "90"},
+    "Walmart": {"size": "2000", "quality": "95"},
+}
+
+# ── Palette ───────────────────────────────────────────────────────────────────
 NAVY      = "#1a3a6b"
 NAVY_DARK = "#0f2548"
 NAVY_LT   = "#2b4c8c"
@@ -19,6 +38,7 @@ BLACK     = "#0d1117"
 WHITE     = "#ffffff"
 LOG_BG    = "#0d1117"
 LOG_FG    = "#8b9db8"
+TEAL      = "#2e9fa5"
 
 # ── Fonts ─────────────────────────────────────────────────────────────────────
 F_HEAD = ("Arial", 13, "bold")
@@ -32,7 +52,6 @@ F_MONO = ("Courier", 8)
 # ── Widget helpers ────────────────────────────────────────────────────────────
 
 def sec(parent, title):
-    """Navy-header panel. Returns white body frame, auto-packed into parent."""
     outer = tk.Frame(parent, bg=BG)
     outer.pack(fill="x", padx=6, pady=(5, 0))
     hdr = tk.Frame(outer, bg=NAVY)
@@ -110,23 +129,62 @@ def update_preview(path):
         preview_canvas.delete("all")
         preview_canvas.create_image(cw // 2, ch // 2, image=photo, anchor="center")
         preview_canvas.image = photo
-        preview_lbl.config(text=f"  {os.path.basename(path)}")
+        preview_name_lbl.config(text=f"  {os.path.basename(path)}")
     except Exception as e:
-        preview_lbl.config(text=f"  Error loading preview: {e}")
+        preview_name_lbl.config(text=f"  Error loading preview: {e}")
+
+
+def _toggle_btn_sync():
+    if _orig_path and _proc_path:
+        toggle_btn.config(state="normal")
+    else:
+        toggle_btn.config(state="disabled",
+                          text="BEFORE", bg=SLATE_MD, fg=GREY)
+
+
+def toggle_preview():
+    global _showing_orig
+    if _showing_orig:
+        if _proc_path:
+            update_preview(_proc_path)
+            toggle_btn.config(text="BEFORE", bg=NAVY_LT, fg=WHITE)
+            _showing_orig = False
+    else:
+        if _orig_path:
+            update_preview(_orig_path)
+            toggle_btn.config(text="AFTER", bg=TEAL, fg=WHITE)
+            _showing_orig = True
+
+
+def apply_platform(*_):
+    p = PLATFORM_PRESETS.get(v_platform.get(), {})
+    if "size"    in p: v_sz.set(p["size"])
+    if "quality" in p: v_qual.set(p["quality"])
 
 
 def pick(var, fn, is_input=False):
+    global _orig_path, _proc_path, _showing_orig
     p = fn()
-    if p:
-        var.set(p)
-        if is_input and var is v_in_file:
-            try:
-                with Image.open(p) as im:
-                    w, h = im.size
-                v_size.set(f"{w} x {h} px")
-                update_preview(p)
-            except Exception:
-                v_size.set("")
+    if not p:
+        return
+    var.set(p)
+    if is_input and var is v_in_file:
+        try:
+            with Image.open(p) as im:
+                w, h = im.size
+            v_size.set(f"Input: {w} × {h} px  |  Canvas: {v_sz.get()} px")
+            update_preview(p)
+        except Exception:
+            v_size.set("")
+        _orig_path = p
+        _proc_path = None
+        _showing_orig = False
+        toggle_btn.config(text="BEFORE", bg=SLATE_MD, fg=GREY, state="disabled")
+    elif is_input and var is v_in_dir:
+        _populate_queue(p)
+    elif is_input and var is v_in_zip:
+        queue_count_lbl.config(text="ZIP selected — queue after processing")
+        queue_frame.pack(fill="x", padx=0, pady=(4, 0))
 
 
 def pick_out_file():
@@ -136,6 +194,34 @@ def pick_out_file():
                    ("WebP", "*.webp"), ("All Files", "*.*")])
     if p:
         v_out_file.set(p)
+
+
+def _populate_queue(folder_path):
+    global _queue_files
+    exts = ('.jpg', '.jpeg', '.png', '.webp', '.bmp',
+            '.gif', '.tif', '.tiff', '.heic', '.avif', '.jfif')
+    _queue_files = sorted([
+        os.path.join(folder_path, f)
+        for f in os.listdir(folder_path)
+        if os.path.isfile(os.path.join(folder_path, f))
+        and f.lower().endswith(exts)
+    ])
+    queue_lb.delete(0, "end")
+    for f in _queue_files:
+        queue_lb.insert("end", os.path.basename(f))
+    queue_count_lbl.config(text=f"{len(_queue_files)} image(s) queued")
+    if _queue_files:
+        queue_lb.selection_set(0)
+        update_preview(_queue_files[0])
+        preview_name_lbl.config(text=f"  {os.path.basename(_queue_files[0])}")
+    queue_frame.pack(fill="x", padx=0, pady=(4, 0))
+
+
+def _on_queue_select(event):
+    sel = queue_lb.curselection()
+    if sel:
+        path = _queue_files[sel[0]]
+        update_preview(path)
 
 
 def do_run():
@@ -179,7 +265,14 @@ def do_run():
     if v_qc.get():
         args += ["--qc", "--qc_mode", v_qcmode.get()]
 
+    # Batch rename
+    if v_rename_prefix.get().strip():
+        args += ["--out_prefix", v_rename_prefix.get().strip()]
+    if v_rename_suffix.get().strip():
+        args += ["--out_suffix", v_rename_suffix.get().strip()]
+
     out_path = None
+    out_zip_result = None
     if v_in_file.get():
         args += ["--in", v_in_file.get()]
         if v_out_file.get():
@@ -196,8 +289,14 @@ def do_run():
             args += ["--out_dir", v_out_dir.get()]
     elif v_in_zip.get():
         args += ["--in_zip", v_in_zip.get()]
-        if v_out_zip.get():
-            args += ["--out_zip", v_out_zip.get()]
+        # Always resolve output ZIP path — default next to input if not set
+        oz = v_out_zip.get().strip()
+        if not oz:
+            base = os.path.splitext(v_in_zip.get())[0]
+            oz = base + "_processed.zip"
+            v_out_zip.set(oz)
+        args += ["--out_zip", oz]
+        out_zip_result = oz
     else:
         messagebox.showerror("Error", "Select an input (file / folder / zip).")
         return
@@ -207,12 +306,14 @@ def do_run():
 
     def worker():
         code, output = run_cmd(args)
-        root.after(0, lambda: _finish(code, output, out_path))
+        root.after(0, lambda: _finish(code, output, out_path, out_zip_result))
 
     threading.Thread(target=worker, daemon=True).start()
 
 
-def _finish(code, output, out_path):
+def _finish(code, output, out_path, out_zip=None):
+    global _proc_path, _showing_orig
+
     log.config(state="normal")
     log.delete("1.0", "end")
     log.insert("end", "$ image_toolkit [args]\n\n", "cmd")
@@ -249,23 +350,36 @@ def _finish(code, output, out_path):
         except Exception as e:
             log.insert("end", f"\n[QC parse error: {e}]\n")
 
+    if code == 0 and out_zip and os.path.exists(out_zip):
+        log.insert("end", f"\n{'─' * 52}\n", "div")
+        log.insert("end", f"  ZIP saved → {out_zip}\n", "info")
+        log.insert("end", f"{'─' * 52}\n", "div")
+
     log.config(state="disabled")
     log.see("end")
 
     if code == 0 and out_path and os.path.exists(out_path):
+        _proc_path = out_path
+        _showing_orig = False
         update_preview(out_path)
+        toggle_btn.config(text="BEFORE", bg=NAVY_LT, fg=WHITE, state="normal")
         try:
             with Image.open(out_path) as im:
-                v_size.set(f"Output: {im.size[0]} x {im.size[1]} px")
+                in_txt = v_size.get().split("|")[0].strip()
+                v_size.set(f"{in_txt}  |  Output: {im.size[0]} × {im.size[1]} px")
         except Exception:
             pass
 
     run_btn.config(state="normal", bg=NAVY, cursor="hand2",
                    text="  RUN PROCESSING")
 
-    messagebox.showinfo(
-        "ShelfReady",
-        "Done!" if code == 0 else "Finished with errors — check the log.")
+    if code == 0 and out_zip:
+        msg = f"Done!\n\nZIP saved to:\n{out_zip}"
+    elif code == 0:
+        msg = "Done!"
+    else:
+        msg = "Finished with errors — check the log."
+    messagebox.showinfo("ShelfReady", msg)
 
 
 # ── Window ────────────────────────────────────────────────────────────────────
@@ -338,6 +452,31 @@ v_neut   = tk.StringVar(value="18")
 v_fill   = tk.StringVar(value="0.84")
 v_qual   = tk.StringVar(value="95")
 
+v_platform      = tk.StringVar(value="Custom")
+v_rename_prefix = tk.StringVar()
+v_rename_suffix = tk.StringVar()
+
+# ── PLATFORM PRESET ───────────────────────────────────────────────────────────
+
+plat_bar = tk.Frame(left, bg=BG)
+plat_bar.pack(fill="x", padx=6, pady=(6, 0))
+tk.Label(plat_bar, text="Platform:", bg=BG, fg=SLATE_MD, font=F_LBL).pack(side="left", padx=(2, 4))
+plat_menu = mko(plat_bar, v_platform, *PLATFORM_PRESETS.keys())
+plat_menu.pack(side="left")
+tk.Label(plat_bar, text="Canvas px:", bg=BG, fg=SLATE_MD, font=F_LBL).pack(side="left", padx=(14, 4))
+sz_ent = tk.Entry(plat_bar, textvariable=v_sz, width=6,
+                  bg=PANEL, fg=BLACK, font=F_ENT, relief="flat",
+                  highlightbackground=GREY, highlightthickness=1,
+                  highlightcolor=NAVY, insertbackground=NAVY)
+sz_ent.pack(side="left")
+tk.Label(plat_bar, text="Quality:", bg=BG, fg=SLATE_MD, font=F_LBL).pack(side="left", padx=(10, 4))
+qual_ent = tk.Entry(plat_bar, textvariable=v_qual, width=4,
+                    bg=PANEL, fg=BLACK, font=F_ENT, relief="flat",
+                    highlightbackground=GREY, highlightthickness=1,
+                    highlightcolor=NAVY, insertbackground=NAVY)
+qual_ent.pack(side="left")
+v_platform.trace_add("write", apply_platform)
+
 # ── INPUT / OUTPUT ────────────────────────────────────────────────────────────
 
 io = sec(left, "INPUT / OUTPUT")
@@ -371,12 +510,41 @@ for r, (label, ivar, icmd, oicon, ovar, ocmd) in enumerate(_io_rows):
     mkb(io, oicon, ocmd, emoji=True).grid(row=r, column=4, **P)
     mke(io, ovar, 24).grid(row=r, column=5, sticky="ew", **P)
 
+# Rename row
+rename_row = tk.Frame(io, bg=PANEL)
+rename_row.grid(row=3, column=0, columnspan=6, sticky="ew", padx=4, pady=(2, 4))
+tk.Label(rename_row, text="Batch rename — Prefix:", bg=PANEL, fg=SLATE_MD,
+         font=F_LBL).pack(side="left", padx=(4, 2))
+mke(rename_row, v_rename_prefix, 12).pack(side="left")
+tk.Label(rename_row, text="Suffix:", bg=PANEL, fg=SLATE_MD,
+         font=F_LBL).pack(side="left", padx=(10, 2))
+mke(rename_row, v_rename_suffix, 12).pack(side="left")
+tk.Label(rename_row, text="e.g. prefix=hero_  suffix=_clean  →  hero_name_clean.jpg",
+         bg=PANEL, fg=GREY, font=F_TINY).pack(side="left", padx=(8, 0))
+
 tk.Label(io, textvariable=v_size, bg=PANEL, fg=NAVY_LT,
-         font=F_TINY).grid(row=3, column=2, sticky="w", padx=4, pady=(0, 4))
+         font=F_TINY).grid(row=4, column=0, columnspan=6, sticky="w", padx=8, pady=(0, 4))
 
 # ── PROCESSING OPTIONS ────────────────────────────────────────────────────────
 
 ops = sec(left, "PROCESSING OPTIONS")
+
+# Auto-snap fill params when a fill mode is selected
+def _on_fit_mode(*_):
+    mode = v_fit.get()
+    if mode == "fill_width":
+        v_fill.set("0.99")
+        v_margin.set("0.0")
+        v_up.set(True)
+    elif mode == "fill_height":
+        v_fill.set("0.97")
+        v_tpad.set("30")
+        v_up.set(True)
+    elif mode in ("pad", "fit"):
+        v_fill.set("0.84")
+        v_margin.set("0.015")
+        v_tpad.set("120")
+v_fit.trace_add("write", _on_fit_mode)
 
 # Dropdowns
 dd = tk.Frame(ops, bg=PANEL)
@@ -384,7 +552,7 @@ dd.pack(fill="x", padx=8, pady=(6, 2))
 for i, (t, v, vals) in enumerate([
     ("Operation", v_op,   ["convert", "clean", "both"]),
     ("Work On",   v_work, ["image", "canvas"]),
-    ("Fit Mode",  v_fit,  ["pad", "fit", "crop_fill"]),
+    ("Fit Mode",  v_fit,  ["pad", "fit", "crop_fill", "fill_height", "fill_width"]),
     ("Mode",      v_mode, ["safe", "auto", "aggressive"]),
 ]):
     pad_left = 0 if i == 0 else 14
@@ -393,15 +561,14 @@ for i, (t, v, vals) in enumerate([
 
 rule(ops)
 
-# Numeric params — 3 per row
+# Numeric params — 4 per row (Size px removed; now in platform bar)
 pf = tk.Frame(ops, bg=PANEL)
 pf.pack(fill="x", padx=8, pady=2)
 PARAMS = [
-    ("Size px",    v_sz),    ("Margin %",   v_margin), ("Top Pad px", v_tpad),   ("V.Bias",     v_vbias),
-    ("Contrast",   v_cont),  ("Shp.Radius", v_shr),    ("Shp.%",      v_shp),    ("Shp.Thr",    v_sht),
-    ("Dehalo px",  v_deh),   ("EdgeFeath",  v_edge),   ("TopClean %", v_tcln),   ("White Floor",v_wfl),
-    ("Neutrality", v_neut),  ("Fill Ratio", v_fill),   ("Quality",    v_qual),   ("Shdw Alpha", v_shdal),
-    ("DPI Value",  v_dpival),
+    ("Margin %",   v_margin), ("Top Pad px", v_tpad),   ("V.Bias",     v_vbias),  ("Contrast",   v_cont),
+    ("Shp.Radius", v_shr),    ("Shp.%",      v_shp),    ("Shp.Thr",    v_sht),    ("Dehalo px",  v_deh),
+    ("EdgeFeath",  v_edge),   ("TopClean %", v_tcln),   ("White Floor",v_wfl),    ("Neutrality", v_neut),
+    ("Fill Ratio", v_fill),   ("Shdw Alpha", v_shdal),  ("DPI Value",  v_dpival),
 ]
 for i, (t, v) in enumerate(PARAMS):
     c, row = (i % 4) * 2, i // 4
@@ -497,17 +664,58 @@ log.tag_config("crit",   foreground="#fc8181")
 log.tag_config("err",    foreground="#f6ad55")
 log.tag_config("warn",   foreground="#f6e05e")
 
-# ── PREVIEW ───────────────────────────────────────────────────────────────────
+# ── RIGHT: PREVIEW + QUEUE ────────────────────────────────────────────────────
 
+right.grid_rowconfigure(1, weight=1)
+right.grid_columnconfigure(0, weight=1)
+
+# Preview header
 prev_hdr = tk.Frame(right, bg=SLATE)
-prev_hdr.pack(fill="x")
-preview_lbl = tk.Label(prev_hdr, text="  IMAGE PREVIEW",
-                        bg=SLATE, fg=GREY_LT,
-                        font=F_SEC, anchor="w", padx=4, pady=4)
-preview_lbl.pack(side="left")
+prev_hdr.grid(row=0, column=0, sticky="ew")
 
+toggle_btn = tk.Button(prev_hdr, text="BEFORE",
+                        command=toggle_preview,
+                        bg=SLATE_MD, fg=GREY,
+                        activebackground=NAVY_LT, activeforeground=WHITE,
+                        relief="flat", bd=0, cursor="hand2",
+                        font=("Arial", 8, "bold"), padx=8, pady=4,
+                        state="disabled")
+toggle_btn.pack(side="left", padx=(6, 2), pady=2)
+
+preview_name_lbl = tk.Label(prev_hdr, text="  IMAGE PREVIEW",
+                              bg=SLATE, fg=GREY_LT,
+                              font=F_SEC, anchor="w", padx=4, pady=4)
+preview_name_lbl.pack(side="left", fill="x", expand=True)
+
+# Preview canvas
 preview_canvas = tk.Canvas(right, bg=LOG_BG, relief="flat",
-                            bd=0, highlightthickness=0)
-preview_canvas.pack(fill="both", expand=True)
+                             bd=0, highlightthickness=0)
+preview_canvas.grid(row=1, column=0, sticky="nsew")
+
+# Queue browser (hidden until folder/zip selected)
+queue_frame = tk.Frame(right, bg=SLATE)
+
+queue_hdr = tk.Frame(queue_frame, bg=SLATE)
+queue_hdr.pack(fill="x")
+tk.Label(queue_hdr, text="BATCH QUEUE", bg=SLATE, fg=GREY_LT,
+         font=F_SEC, anchor="w", padx=10, pady=3).pack(side="left")
+queue_count_lbl = tk.Label(queue_hdr, text="", bg=SLATE, fg=GREY,
+                             font=F_TINY, padx=6)
+queue_count_lbl.pack(side="left")
+
+queue_body = tk.Frame(queue_frame, bg=LOG_BG)
+queue_body.pack(fill="both", expand=True)
+
+queue_sb = tk.Scrollbar(queue_body, bg=SLATE, troughcolor=LOG_BG)
+queue_sb.pack(side="right", fill="y")
+
+queue_lb = tk.Listbox(queue_body, bg=LOG_BG, fg=LOG_FG,
+                       font=F_MONO, relief="flat", bd=0,
+                       selectbackground=NAVY, selectforeground=WHITE,
+                       activestyle="none", height=6,
+                       yscrollcommand=queue_sb.set)
+queue_lb.pack(side="left", fill="both", expand=True)
+queue_sb.config(command=queue_lb.yview)
+queue_lb.bind("<<ListboxSelect>>", _on_queue_select)
 
 root.mainloop()
