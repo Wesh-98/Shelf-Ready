@@ -39,6 +39,10 @@ jobs:
           python -c "from shelfready_ui import assets, presets, runner, settings, theme; print('shelfready_ui ok')"
 
       - name: End-to-end CLI run
+        # Builds its own fixture rather than committing product photography:
+        # a coloured product on a coloured ground, so the run exercises
+        # background removal and canvas placement for real.
         run: |
-          python image_toolkit.py --in samples/bn.jpg --out out.jpg --op both
-          python -c "import os, sys; sys.exit(0 if os.path.exists('out.jpg') else 'no output written')"
+          python -c "from PIL import Image, ImageDraw; im = Image.new('RGB', (800, 800), (40, 90, 200)); d = ImageDraw.Draw(im); d.rectangle([250, 200, 550, 600], fill=(220, 60, 50)); d.ellipse([300, 250, 500, 400], fill=(250, 230, 40)); im.save('fixture.jpg', quality=95)"
+          python image_toolkit.py --in fixture.jpg --out out.jpg --op both --size 1500
+          python -c "import sys; from PIL import Image; im = Image.open('out.jpg'); print('output', im.size); sys.exit(0 if im.size == (1500, 1500) else 'unexpected canvas size')"

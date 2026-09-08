@@ -13,6 +13,9 @@ __pycache__/
 build/
 dist/
 
+# Sample product photography - local only, not for publication
+samples/
+
 # Output images
 *_processed.jpg
 *_out/

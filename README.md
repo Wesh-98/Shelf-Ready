@@ -72,8 +72,7 @@ ShelfReady/
 │   │   ├── shelfready_icon_warm.png        # Title-bar mark — Warm theme
 │   │   └── shelfready_mark_transparent.png # Mark alone, no plate
 │   └── design/                    # Reference art, never loaded by the app
-├── tests/                         # Unit tests for the tkinter-free logic
-└── samples/                       # Sample images for testing
+└── tests/                         # Unit tests for the tkinter-free logic
 ```
 
 ---
