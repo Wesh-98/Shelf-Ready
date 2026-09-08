@@ -1,5 +1,4 @@
 import os, argparse, zipfile, sys, tempfile, concurrent.futures
-from collections import deque
 import numpy as np
 from scipy.ndimage import label as _ndlabel
 try:
@@ -15,15 +14,6 @@ try:
 except Exception:
     pass
 from PIL import Image, ImageOps, ImageFilter, ImageEnhance, ImageDraw, ImageFont
-import json
-
-# Check-Pic QC integration
-try:
-    from agents.check_pic import CheckPicAgent
-    from agents.check_pic.models import QCResult
-    CHECKPIC_AVAILABLE = True
-except ImportError:
-    CHECKPIC_AVAILABLE = False
 
 def add_bottom_shadow(canvas_rgb, alpha_pct=70):
     # alpha_pct 0–100 → convert to 0–255
@@ -750,12 +740,20 @@ def square_canvas(im_rgb, size=1500, fit_mode="pad", target_fill=0.84,
     canvas.paste(im, (x, y))
     return canvas
 
+# A product silhouette smaller than this fraction of the frame is treated as a
+# failed detection rather than a real product.
+MIN_PRODUCT_AREA_PCT = 0.005
+
 def clean_product_image(im, size=1500, allow_upscale=False, mode="auto", dehalo_px=2,
                         edge_feather=1.0, sharpen_radius=1.3, sharpen_percent=140,
                         sharpen_threshold=2, product_contrast=1.05, largest_scrub=True,
                         top_clean_pct=0.08, margin_pct=0.015, white_floor=245, neutrality_tol=18,
                         fit_mode="pad", work_on="image", target_fill=0.84, min_top_pad_px=120, vertical_bias=0.58,
                         no_bg_clean=False, no_downscale=False, remove_overlays=True):
+    # prod_mask stays None unless we detect a usable product silhouette; when it is
+    # set it doubles as the paste mask, so background inside the crop box (concave
+    # products, the margin ring) is replaced with white instead of being kept.
+    prod_mask = None
     if work_on == "image" and not no_bg_clean:
         arr = np.array(im.convert("RGB")).astype(np.uint8)
         rgb = arr[...,:3]
@@ -774,17 +772,23 @@ def clean_product_image(im, size=1500, allow_upscale=False, mode="auto", dehalo_
             prod_mask_bool = detect_and_remove_overlays(rgb, prod_mask.astype(bool))
             prod_mask = prod_mask_bool.astype(np.uint8)
         ys, xs = np.where(prod_mask > 0)
-        if len(xs) > 0:
+        # Guard against a failed detection: a mask covering almost nothing would
+        # composite to a near-blank canvas, so fall back to leaving the frame alone.
+        min_area = MIN_PRODUCT_AREA_PCT * prod_mask.size
+        if len(xs) > 0 and len(xs) >= min_area:
             y0, y1 = ys.min(), ys.max(); x0, x1 = xs.min(), xs.max()
             margin = int(float(margin_pct) * max(im.size))
             x0 = max(0, x0 - margin); y0 = max(0, y0 - margin)
             x1 = min(im.width-1, x1 + margin); y1 = min(im.height-1, y1 + margin)
             im = im.crop((x0, y0, x1+1, y1+1))
-    im_white = clamp_white_background(Image.new("RGB", im.size, (255,255,255)), white_floor, neutrality_tol)
+            prod_mask = prod_mask[y0:y1+1, x0:x1+1]
+        else:
+            prod_mask = None
+    im_white = Image.new("RGB", im.size, (255,255,255))
     enhanced = ImageEnhance.Contrast(im).enhance(product_contrast)
     enhanced = enhanced.filter(ImageFilter.UnsharpMask(radius=sharpen_radius, percent=sharpen_percent, threshold=sharpen_threshold))
-    if work_on == "image" and not no_bg_clean:
-        mask = Image.new("L", im.size, 255)
+    if prod_mask is not None:
+        mask = Image.fromarray((prod_mask * 255).astype(np.uint8), "L")
         if edge_feather > 0: mask = mask.filter(ImageFilter.GaussianBlur(edge_feather))
         im_white.paste(enhanced, (0,0), mask)
     else:
@@ -801,10 +805,9 @@ def process_file(in_path, out_path=None, op="convert", size=1500, allow_upscale=
                  progressive=True, optimize=True, set_dpi=None, add_shadow=False, shadow_alpha=70,
                  work_on="image", fit_mode="pad", target_fill=0.84, min_top_pad_px=120,
                  vertical_bias=0.58, white_floor=245, neutrality_tol=18, no_bg_clean=False,
-                 no_downscale=False, qty_badge=None, qc_enabled=False, qc_mode="validate", qc_agent=None,
-                 auto_work_on=False, auto_enhance=False, **_):
-
-    qc_results = {"pre": None, "post": None, "adjustments": []}
+                 no_downscale=False, qty_badge=None,
+                 auto_work_on=False, auto_enhance=False,
+                 out_prefix="", out_suffix="", **_):
 
     im = load_rgb(in_path)
 
@@ -841,61 +844,6 @@ def process_file(in_path, out_path=None, op="convert", size=1500, allow_upscale=
         if "warning" in recs:
             print(f"  -> WARNING: {recs['warning']}")
 
-    # QC Pre-analysis
-    if qc_enabled and CHECKPIC_AVAILABLE:
-        if qc_agent is None:
-            qc_agent = CheckPicAgent()
-
-        context = {
-            "source_path": in_path,
-            "intended_size": size,
-            "fit_mode": fit_mode,
-            "target_fill": target_fill,
-            "margin_pct": margin_pct,
-            "mode": mode,
-            "dehalo_px": dehalo_px,
-            "min_top_pad_px": min_top_pad_px
-        }
-
-        qc_pre = qc_agent.analyze_pre(im, work_on=work_on, **context)
-        qc_results["pre"] = qc_pre
-
-        # Adaptive mode: apply recommendations
-        if qc_mode == "adaptive" and qc_pre.recommendations:
-            for rec in qc_pre.recommendations:
-                if rec.confidence >= 0.6:
-                    if rec.param_name == "mode":
-                        mode = rec.suggested_value
-                    elif rec.param_name == "dehalo_px":
-                        dehalo_px = rec.suggested_value
-                    elif rec.param_name == "no_bg_clean":
-                        no_bg_clean = rec.suggested_value
-                    elif rec.param_name == "margin_pct":
-                        margin_pct = rec.suggested_value
-                    elif rec.param_name == "target_fill":
-                        target_fill = rec.suggested_value
-                    elif rec.param_name == "edge_sensitivity":
-                        # Higher sensitivity → lower white_floor so near-white
-                        # product edges aren't eaten by background cleaning
-                        delta = rec.suggested_value - rec.current_value
-                        white_floor = max(230, white_floor - int(delta * 20))
-                    elif rec.param_name == "remove_overlays" and rec.suggested_value:
-                        # White-out detected corner badges/overlays before processing
-                        from PIL import ImageDraw as _ID
-                        _draw = _ID.Draw(im)
-                        for _issue in qc_pre.issues:
-                            if _issue.code == "PROD_OVERLAY_DETECTED":
-                                for _ov in _issue.details.get("overlays", []):
-                                    x0, y0, x1, y1 = _ov["bbox"]
-                                    _draw.rectangle([x0, y0, x1, y1],
-                                                    fill=(255, 255, 255))
-                        del _draw
-                    qc_results["adjustments"].append({
-                        "param": rec.param_name,
-                        "from": rec.current_value,
-                        "to": rec.suggested_value
-                    })
-
     if op in ("clean","both"):
         im = clean_product_image(
             im,
@@ -919,30 +867,19 @@ def process_file(in_path, out_path=None, op="convert", size=1500, allow_upscale=
         im = add_quantity_badge(im, qty_badge)
 
     if out_path is None:
-        base, _ = os.path.splitext(in_path)
-        out_path = base + ".jpg"
+        head, tail = os.path.split(in_path)
+        stem, _ = os.path.splitext(tail)
+        out_path = os.path.join(head, f"{out_prefix}{stem}{out_suffix}.jpg")
+
+    # A .jpg input with no --out and no prefix/suffix derives its own path,
+    # which would silently destroy the source. Step aside instead.
+    if os.path.abspath(out_path) == os.path.abspath(in_path):
+        head, tail = os.path.split(out_path)
+        stem, ext = os.path.splitext(tail)
+        out_path = os.path.join(head, f"{stem}_processed{ext}")
+        print(f"[!] Output would overwrite the source; writing to {out_path} instead")
 
     save_jpg(im, out_path, quality=quality, progressive=progressive, optimize=optimize, dpi=set_dpi)
-
-    # QC Post-validation
-    if qc_enabled and CHECKPIC_AVAILABLE:
-        qc_post = qc_agent.analyze_post(im, qc_results["pre"])
-        qc_results["post"] = qc_post
-
-        # Print QC results for GUI parsing
-        print("QC_RESULT:" + json.dumps({
-            "passed": qc_post.passed,
-            "pre_issues": len(qc_results["pre"].issues) if qc_results["pre"] else 0,
-            "post_issues": len(qc_post.issues),
-            "score": qc_post.metrics.get("overall_score", 0),
-            "adjustments": qc_results["adjustments"],
-            "issues": [{"severity": i.severity.value, "code": i.code, "message": i.message}
-                       for i in qc_post.issues]
-        }) + ":END_QC_RESULT")
-
-        # Strict mode: raise error if QC fails
-        if qc_mode == "strict" and not qc_post.passed:
-            raise Exception(f"QC validation failed: {qc_post.critical_count} critical, {qc_post.error_count} errors")
 
     return out_path
 
@@ -951,8 +888,15 @@ def process_folder(in_dir, out_dir=None, out_prefix="", out_suffix="", **kw):
         out_dir = os.path.join(in_dir, "_out")
     os.makedirs(out_dir, exist_ok=True)
 
+    # The default output lands inside the input tree, so without pruning it
+    # a second run would walk into its own results and reprocess them into
+    # _out/_out, compounding on every run.
+    out_abs = os.path.abspath(out_dir)
+
     tasks = []
     for root, dirs, files in os.walk(in_dir):
+        dirs[:] = [d for d in dirs
+                   if os.path.abspath(os.path.join(root, d)) != out_abs]
         rel = os.path.relpath(root, in_dir)
         rel = "" if rel == "." else rel
         dst_root = os.path.join(out_dir, rel)
@@ -992,8 +936,11 @@ def process_zip(in_zip, out_zip="converted_cleaned.zip", **kw):
                 for f in files:
                     fp = os.path.join(root, f); arc = os.path.relpath(fp, out_dir); zout.write(fp, arc)
     return out_zip, count
-def main():
-    p = argparse.ArgumentParser(description="ShelfReady Image Toolkit")
+def main(argv=None):
+    """Entry point. argv defaults to sys.argv[1:]; the GUI passes an
+    explicit list so it can run the toolkit in-process."""
+    p = argparse.ArgumentParser(prog="image_toolkit",
+                                description="ShelfReady Image Toolkit")
     p.add_argument("--in", dest="in_path"); p.add_argument("--out", dest="out_path", default=None)
     p.add_argument("--in_dir", dest="in_dir"); p.add_argument("--out_dir", dest="out_dir", default=None)
     p.add_argument("--in_zip", dest="in_zip"); p.add_argument("--out_zip", dest="out_zip", default="converted_cleaned.zip")
@@ -1019,19 +966,13 @@ def main():
     p.add_argument("--shadow_alpha", type=int, default=70, help="Shadow opacity 0–100.")
     p.add_argument("--qty_badge", type=str, default=None, help="Add quantity badge with text (e.g., '20 OZ').")
 
-    # Check-Pic QC arguments
-    p.add_argument("--qc", action="store_true", help="Enable Check-Pic QC analysis")
-    p.add_argument("--qc_mode", choices=["validate", "adaptive", "strict"], default="validate",
-                   help="QC mode: validate (report), adaptive (auto-adjust), strict (fail on errors)")
-    p.add_argument("--qc_report", type=str, default=None, help="Output QC report to file (JSON)")
-
     # Auto-detection and enhancement
     p.add_argument("--auto_work_on", action="store_true",
                    help="Auto-detect work mode based on background (white bg = canvas, else image)")
     p.add_argument("--auto_enhance", action="store_true",
                    help="Auto-adjust sharpening/contrast based on image quality analysis")
 
-    args = p.parse_args()
+    args = p.parse_args(argv)
     progressive = not args.no_progressive; optimize = not args.no_optimize; largest_scrub = not args.no_largest_scrub
     kw = dict(
         op=args.op, size=args.size, allow_upscale=args.allow_upscale, mode=args.mode,
@@ -1042,7 +983,7 @@ def main():
         set_dpi=args.set_dpi, add_shadow=args.add_shadow, shadow_alpha=args.shadow_alpha, work_on=args.work_on,
         fit_mode=args.fit_mode, target_fill=args.target_fill, min_top_pad_px=args.min_top_pad_px, vertical_bias=args.vertical_bias,
         white_floor=args.white_floor, neutrality_tol=args.neutrality_tol, no_bg_clean=args.no_bg_clean, no_downscale=args.no_downscale,
-        qty_badge=args.qty_badge, qc_enabled=args.qc, qc_mode=args.qc_mode,
+        qty_badge=args.qty_badge,
         auto_work_on=args.auto_work_on, auto_enhance=args.auto_enhance,
         out_prefix=args.out_prefix, out_suffix=args.out_suffix
     )
