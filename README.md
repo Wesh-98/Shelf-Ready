@@ -23,11 +23,12 @@ install_codec.bat              — run once if AVIF/HEIC files fail to open
 - **Background cleaning** — removes and replaces backgrounds with pure white
 - **Canvas standardization** — pads or crops to a square canvas (default 1500×1500)
 - **Sharpening & contrast** — configurable unsharp mask and product contrast boost
-- **Batch processing** — process a folder or ZIP archive in one click
-- **QC Analysis** — automated image quality checks with scoring (background purity, centering, fill ratio, color integrity, halo detection)
-- **Adaptive mode** — QC auto-adjusts processing parameters based on what it finds
+- **Batch processing** — process a folder or ZIP archive in one click; step
+  through the queued images with the ◀ ▶ arrows (or Left/Right keys) to check
+  them before and after a run
 - **Shadow & badge overlays** — optional soft drop shadow and quantity badge
 - **AVIF / HEIC support** — reads modern image formats out of the box
+- **Themes** — pick a color theme from the title bar; the app mark follows it
 
 ---
 
@@ -54,16 +55,24 @@ ShelfReady/
 ├── Launch ShelfReady.bat          # Main launcher
 ├── Launch ShelfReady (Debug).bat  # Debug launcher
 ├── install_codec.bat              # AVIF/HEIC codec installer
-├── ShelfReady_Unified_GUI.py      # GUI application
+├── ShelfReady_Unified_GUI.py      # GUI application (window + layout)
 ├── image_toolkit.py               # Core image processing engine
 ├── requirements.txt
-├── agents/
-│   └── check_pic/                 # QC analysis agent
-│       ├── agent.py               # Orchestrator
-│       ├── config.py              # Thresholds & settings
-│       ├── analyzers/             # Background, composition, product, integrity
-│       ├── hooks/                 # Pre/post processing hooks
-│       └── models/                # QC result data models
+├── shelfready_ui/                 # GUI support modules
+│   ├── theme.py                   # Color palettes & fonts
+│   ├── presets.py                 # Platform presets, fit-mode snaps, option lists
+│   ├── settings.py                # Validation + CLI argument assembly (no tkinter)
+│   ├── runner.py                  # Runs the toolkit in-process (no tkinter)
+│   └── assets.py                  # Icon/logo resolution & caching
+├── assets/
+│   ├── icons/                     # Loaded at runtime
+│   │   ├── shelfready.ico         # Window & taskbar icon (16–256 px)
+│   │   ├── shelfready_icon_1024.png        # Master mark (theme-neutral)
+│   │   ├── shelfready_icon_green.png       # Title-bar mark — Terminal theme
+│   │   ├── shelfready_icon_warm.png        # Title-bar mark — Warm theme
+│   │   └── shelfready_mark_transparent.png # Mark alone, no plate
+│   └── design/                    # Reference art, never loaded by the app
+├── tests/                         # Unit tests for the tkinter-free logic
 └── samples/                       # Sample images for testing
 ```
 

@@ -1,4 +1,7 @@
-numpy
-Pillow
-pillow-heif[avif]
-scipy
+# Pinned to the versions ShelfReady is tested against. The ~= form allows
+# patch updates but holds the minor version, so a surprise API change in a
+# new numpy or Pillow cannot break a user's install.
+numpy~=2.3.5
+Pillow~=12.0.0
+pillow-heif[avif]~=1.1.1
+scipy~=1.17.1

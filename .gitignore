@@ -9,6 +9,10 @@ __pycache__/
 *.pyo
 *.pyd
 
+# Build artifacts
+build/
+dist/
+
 # Output images
 *_processed.jpg
 *_out/

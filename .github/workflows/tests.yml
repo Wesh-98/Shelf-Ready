@@ -1,0 +1,44 @@
+name: tests
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit:
+    # ShelfReady is a Windows desktop app; test on the platform it ships for.
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Unit tests
+        # These import only stdlib plus shelfready_ui, so they need no display.
+        run: python -m unittest discover -s tests -v
+
+      - name: Import smoke test
+        # Catches a numpy/scipy/Pillow break that the pure-logic tests miss.
+        run: |
+          python -c "import image_toolkit; print('image_toolkit ok')"
+          python -c "from shelfready_ui import assets, presets, runner, settings, theme; print('shelfready_ui ok')"
+
+      - name: End-to-end CLI run
+        run: |
+          python image_toolkit.py --in samples/bn.jpg --out out.jpg --op both
+          python -c "import os, sys; sys.exit(0 if os.path.exists('out.jpg') else 'no output written')"

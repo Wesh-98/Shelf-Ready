@@ -1,0 +1,57 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # 3.12 has the best AVIF/HEIC wheel coverage and settled PyInstaller
+          # support; the app itself runs on 3.10+.
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run tests before shipping
+        run: python -m unittest discover -s tests
+
+      - name: Build executable
+        run: pyinstaller ShelfReady.spec
+
+      - name: Verify the artifact exists
+        run: |
+          if (-not (Test-Path dist/ShelfReady.exe)) { throw "build produced no exe" }
+          Get-Item dist/ShelfReady.exe | Select-Object Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ShelfReady-windows
+          path: dist/ShelfReady.exe
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/ShelfReady.exe
+          generate_release_notes: true
+          body: |
+            Download `ShelfReady.exe` below and double-click it. No Python
+            install is required.
+
+            Windows SmartScreen will warn that the publisher is unknown -
+            the build is not code-signed. Choose **More info -> Run anyway**.
