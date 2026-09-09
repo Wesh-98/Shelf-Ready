@@ -71,7 +71,8 @@ hosting, with the exact Namecheap DNS records. The short version:
 ```
 fly launch --no-deploy       # once; app name and region live in fly.toml
 fly deploy --remote-only     # builds on Fly, so no local Docker needed
-fly certs add shelfready.lefeelabs.site   # then add the CNAME it prints
+fly certs add shelfready.lefeelabs.site   # creates the cert
+fly certs setup shelfready.lefeelabs.site # reprints the CNAME to add
 ```
 
 `fly.toml` runs one 1 GB `shared-cpu-1x` machine that scales to zero between
