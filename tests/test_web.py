@@ -57,7 +57,10 @@ class TestPages(WebTestCase):
     def test_download_points_at_the_release(self):
         response = self.client.get("/download", follow_redirects=False)
         self.assertEqual(302, response.status_code)
-        self.assertIn("releases", response.headers["location"])
+        location = response.headers["location"]
+        self.assertIn("releases", location)
+        # The button should land on the exe itself, not the page listing it.
+        self.assertTrue(location.endswith(".exe"), location)
 
     def test_static_assets_are_reachable(self):
         for path in ("/static/style.css", "/static/app.js", "/static/theme.css"):

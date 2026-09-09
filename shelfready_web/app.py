@@ -35,6 +35,11 @@ STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 # a v* tag; /latest resolves to whatever the newest one is.
 RELEASE_URL = "https://github.com/Wesh-98/Shelf-Ready/releases/latest"
 
+# The file rather than the page listing it. GitHub serves the newest release's
+# asset from /latest/download/<name>, so the button is one click and this needs
+# no edit when a new version ships.
+DOWNLOAD_URL = f"{RELEASE_URL}/download/ShelfReady.exe"
+
 # Per-IP budget. Processing is the expensive verb, so it is limited far more
 # tightly than fetching the page or the form config.
 PROCESS_RATE_LIMIT = os.environ.get("SHELFREADY_RATE_LIMIT", "20/minute")
@@ -90,7 +95,7 @@ async def healthz():
 @app.get("/download", include_in_schema=False)
 async def download():
     """The desktop app, for people processing more than a few images."""
-    return RedirectResponse(RELEASE_URL, status_code=302)
+    return RedirectResponse(DOWNLOAD_URL, status_code=302)
 
 
 @app.get("/api/config")
