@@ -1,6 +1,8 @@
 # ShelfReady
 
-Professional e-commerce product image processing toolkit. Cleans backgrounds, standardizes canvas size, sharpens, and runs automated quality control — from a desktop GUI on Windows, or from any browser.
+Professional e-commerce product image processing toolkit. Cleans backgrounds,
+standardizes canvas size, and sharpens — from a desktop GUI on Windows, or from
+any browser.
 
 ---
 
@@ -16,11 +18,28 @@ Launch ShelfReady (Debug).bat  — keeps console open after close (for troublesh
 install_codec.bat              — run once if AVIF/HEIC files fail to open
 ```
 
+### Standalone executable
+
+`.github/workflows/release.yml` builds a single-file `ShelfReady.exe` with
+PyInstaller and attaches it to the GitHub release whenever a `v*` tag is
+pushed:
+
+```
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+To build one locally instead, install `requirements-dev.txt` and run
+`pyinstaller ShelfReady.spec`. The exe is not code-signed, so Windows
+SmartScreen warns that the publisher is unknown — **More info → Run anyway**.
+
 ---
 
 ## The web app
 
-One image at a time, no install, any platform. Run it locally with:
+**Live at <https://shelfready.lefeelabs.site>** — one image at a time, no
+install, any platform.
+
+Run it locally with:
 
 ```
 .venv\Scripts\python.exe -m pip install -r requirements-web.txt
@@ -42,7 +61,9 @@ ZIP archives, the web app takes one image per run.
 
 ### Deploying it
 
-Deploys to **`shelfready.lefeelabs.site`** (not live yet — see below).
+Live at **<https://shelfready.lefeelabs.site>**, hosted on Fly.io as the app
+`shelfready-lefeelabs` — Fly app names are global and `shelfready` was taken,
+which affects the CNAME target only, never the public address.
 
 See **[docs/DEPLOY.md](docs/DEPLOY.md)** for the full walkthrough — Fly.io for
 hosting, with the exact Namecheap DNS records. The short version:
@@ -101,13 +122,16 @@ ShelfReady/
 ├── install_codec.bat              # AVIF/HEIC codec installer
 ├── ShelfReady_Unified_GUI.py      # GUI application (window + layout)
 ├── image_toolkit.py               # Core image processing engine
-├── requirements.txt
+├── requirements.txt               # Runtime deps for the desktop app
+├── requirements-web.txt           # + FastAPI/uvicorn for the web front end
+├── requirements-dev.txt           # + PyInstaller and httpx for builds & tests
 ├── shelfready_ui/                 # GUI support modules
 │   ├── theme.py                   # Color palettes & fonts
 │   ├── presets.py                 # Platform presets, fit-mode snaps, option lists
 │   ├── settings.py                # Validation + CLI argument assembly (no tkinter)
 │   ├── runner.py                  # Runs the toolkit in-process (no tkinter)
-│   └── assets.py                  # Icon/logo resolution & caching
+│   ├── assets.py                  # Icon/logo resolution & caching
+│   └── version.py                 # Version, studio name & URL (single source)
 ├── assets/
 │   ├── icons/                     # Loaded at runtime
 │   │   ├── shelfready.ico         # Window & taskbar icon (16–256 px)
@@ -123,6 +147,10 @@ ShelfReady/
 │   ├── build_theme_css.py         # Generates static/theme.css from theme.py
 │   └── static/                    # index.html, app.js, style.css
 ├── Dockerfile, fly.toml           # How the web app is built and hosted
+├── ShelfReady.spec                # PyInstaller recipe for the standalone exe
+├── .github/workflows/             # tests.yml, deploy.yml, release.yml
+├── docs/DEPLOY.md                 # Full hosting + DNS walkthrough
+├── LICENSE                        # MIT
 └── tests/                         # Unit tests for the tkinter-free logic
 ```
 
@@ -134,6 +162,26 @@ drift from the desktop app's. After editing `THEMES`, run:
 ```
 
 `tests/test_web.py` fails if you forget.
+
+---
+
+## Tests
+
+```
+.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+The suite covers the tkinter-free logic only — settings validation, theme
+generation, asset resolution, and the whole web job path — so it needs no
+display and no running server. `.github/workflows/tests.yml` runs it on
+Windows against Python 3.12 and 3.13 on every push.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
 
 ---
 
