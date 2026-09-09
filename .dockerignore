@@ -15,5 +15,13 @@ assets/design/
 ShelfReady.spec
 ShelfReady_Unified_GUI.py
 *.bat
+
+# Documentation, read on GitHub rather than by the running app. The
+# Dockerfile's COPY lines already leave these out; listing them keeps
+# them out of the context uploaded to the remote builder too.
+docs/
+README.md
+LICENSE
+
 Dockerfile
 .dockerignore
