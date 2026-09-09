@@ -65,8 +65,7 @@ Live at **<https://shelfready.lefeelabs.site>**, hosted on Fly.io as the app
 `shelfready-lefeelabs` — Fly app names are global and `shelfready` was taken,
 which affects the CNAME target only, never the public address.
 
-See **[docs/DEPLOY.md](docs/DEPLOY.md)** for the full walkthrough — Fly.io for
-hosting, with the exact Namecheap DNS records. The short version:
+The domain points at it by CNAME. The whole deploy is four commands:
 
 ```
 fly launch --no-deploy       # once; app name and region live in fly.toml
@@ -150,7 +149,6 @@ ShelfReady/
 ├── Dockerfile, fly.toml           # How the web app is built and hosted
 ├── ShelfReady.spec                # PyInstaller recipe for the standalone exe
 ├── .github/workflows/             # tests.yml, deploy.yml, release.yml
-├── docs/DEPLOY.md                 # Full hosting + DNS walkthrough
 ├── LICENSE                        # MIT
 └── tests/                         # Unit tests for the tkinter-free logic
 ```

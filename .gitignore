@@ -36,3 +36,6 @@ desktop.ini
 # Temp / junk
 nul
 *.tmp
+
+# Deployment notes: local reference, deliberately not published.
+docs/
