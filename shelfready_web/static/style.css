@@ -1,0 +1,219 @@
+/* ShelfReady web front end.
+   Colors come from theme.css, which is generated from shelfready_ui/theme.py
+   so the site and the desktop app share one palette. Nothing here hardcodes
+   a color; everything references a token. */
+
+* { box-sizing: border-box; }
+
+/* The browser's own `[hidden] { display: none }` lives in the user-agent
+   stylesheet, and any author rule beats it. Several elements below are
+   toggled by the `hidden` attribute *and* given a `display` here (.spinner,
+   .advanced, .result-bar, .seg), which silently pinned them open — a
+   permanent "Processing..." overlay and an Advanced panel that would not
+   collapse. Restating the rule in the author sheet puts the attribute back
+   in charge, so `el.hidden = true` works everywhere. */
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--on-bg);
+  font: 14px/1.5 "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Top bar */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; padding: 12px 20px;
+  background: var(--navy); border-bottom: 1px solid var(--grey-lt);
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.mark { border-radius: 6px; display: block; }
+.wordmark { font-size: 18px; letter-spacing: .3px; color: var(--on-bg); }
+.wordmark b { color: var(--accent); font-weight: 700; }
+.topbar-actions { display: flex; gap: 8px; }
+
+.ghost-btn {
+  background: transparent; color: var(--on-bg);
+  border: 1px solid var(--grey); border-radius: 6px;
+  padding: 7px 12px; font-size: 13px; cursor: pointer;
+  text-decoration: none; white-space: nowrap;
+}
+.ghost-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Layout */
+.layout {
+  flex: 1;
+  display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
+  gap: 16px; padding: 16px; max-width: 1280px; width: 100%; margin: 0 auto;
+  align-items: start;
+}
+.col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+.panel {
+  background: var(--panel); border: 1px solid var(--grey-lt);
+  border-radius: 10px; padding: 14px;
+}
+.panel-title {
+  margin: 0 0 10px; font-size: 11px; font-weight: 700;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--accent);
+}
+
+/* Dropzone */
+.dropzone {
+  border: 1.5px dashed var(--grey); border-radius: 10px;
+  padding: 26px 16px; text-align: center; cursor: pointer;
+  background: var(--field-bg); transition: border-color .15s, background .15s;
+}
+.dropzone:hover, .dropzone:focus-visible,
+.dropzone.is-dragging { border-color: var(--accent); outline: none; }
+.dropzone.is-dragging { background: var(--navy-lt); }
+.dz-icon { width: 34px; height: 34px; color: var(--accent); }
+.dz-headline { margin: 8px 0 4px; color: var(--slate-md); }
+.dz-hint { margin: 0; font-size: 12px; color: var(--muted); }
+.link { color: var(--accent); text-decoration: underline; }
+.filename {
+  margin: 8px 0 0; font-size: 12px; color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* Form controls */
+label, .field-row > label { color: var(--slate-md); font-size: 13px; }
+
+select, input[type="text"], input[type="number"] {
+  background: var(--field-bg); color: var(--slate-md);
+  border: 1px solid var(--grey-lt); border-radius: 6px;
+  padding: 6px 8px; font: inherit; font-size: 13px; width: 100%;
+  min-width: 0;
+}
+select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+input:disabled { opacity: .45; }
+
+.field-row {
+  display: grid; grid-template-columns: 92px minmax(0, 1fr);
+  gap: 8px; align-items: center; margin-bottom: 10px;
+}
+.field-row .hint { grid-column: 2; }
+
+.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+.grid-2 .field { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 6px; align-items: center; }
+.grid-2 .field label { font-size: 12px; text-align: right; }
+
+.hint { font-size: 11px; color: var(--muted); }
+
+.toggles { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; }
+.check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; }
+.check input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+
+.rule { border: 0; border-top: 1px solid var(--grey-lt); margin: 12px 0; }
+
+.extras { display: flex; flex-direction: column; gap: 8px; }
+.extra-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.extra-row .check { min-width: 132px; }
+.mini { width: 74px; }
+.mini.wide { width: 130px; }
+
+/* Advanced */
+.disclosure {
+  margin-top: 12px; background: transparent; border: 0; cursor: pointer;
+  color: var(--accent); font: inherit; font-size: 13px; padding: 4px 0;
+  display: flex; align-items: center; gap: 6px;
+}
+.caret { display: inline-block; transition: transform .15s; }
+.disclosure[aria-expanded="true"] .caret { transform: rotate(90deg); }
+.advanced { margin-top: 8px; display: flex; flex-direction: column; gap: 14px; }
+.adv-group h3 {
+  margin: 0 0 8px; font-size: 11px; font-weight: 700; color: var(--accent);
+  letter-spacing: .08em; text-transform: uppercase;
+}
+.adv-flags { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+
+/* Run button */
+.run-btn {
+  background: var(--accent); color: var(--text-on-accent);
+  border: 0; border-radius: 8px; padding: 12px 16px;
+  font-size: 15px; font-weight: 700; cursor: pointer;
+  text-align: center; text-decoration: none; display: block;
+}
+.run-btn:hover:not(:disabled) { background: var(--accent-hover); }
+.run-btn:disabled { opacity: .4; cursor: not-allowed; }
+.run-btn.small { padding: 8px 14px; font-size: 13px; display: inline-block; }
+
+.errors {
+  background: var(--field-bg); border: 1px solid var(--accent);
+  border-left-width: 3px; border-radius: 6px; padding: 10px 12px;
+  font-size: 13px; color: var(--slate-md);
+}
+.errors ul { margin: 0; padding-left: 18px; }
+
+/* Preview */
+.preview-panel { position: sticky; top: 16px; }
+.preview-head { display: flex; align-items: center; justify-content: space-between; }
+
+.seg { display: inline-flex; border: 1px solid var(--grey); border-radius: 6px; overflow: hidden; }
+.seg-btn {
+  background: transparent; color: var(--muted); border: 0;
+  padding: 5px 14px; font: inherit; font-size: 12px; cursor: pointer;
+}
+.seg-btn.is-active { background: var(--accent); color: var(--text-on-accent); font-weight: 600; }
+
+.stage {
+  margin-top: 10px; border-radius: 8px; background: var(--field-bg);
+  border: 1px solid var(--grey-lt);
+  min-height: 340px; aspect-ratio: 1 / 1;
+  display: flex; align-items: center; justify-content: center;
+  position: relative; overflow: hidden;
+}
+.stage img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+.stage-empty { color: var(--muted); font-size: 13px; padding: 0 20px; text-align: center; }
+
+.spinner {
+  position: absolute; inset: 0; display: flex; gap: 10px;
+  align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--field-bg) 82%, transparent);
+  color: var(--slate-md); font-size: 13px;
+}
+.spinner span {
+  width: 18px; height: 18px; border-radius: 50%;
+  border: 2px solid var(--grey); border-top-color: var(--accent);
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner span { animation-duration: 2.4s; } }
+
+.result-bar { margin-top: 12px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+.log { margin-top: 12px; font-size: 12px; color: var(--muted); }
+.log summary { cursor: pointer; }
+.log pre {
+  background: var(--log-bg); color: var(--log-fg); border-radius: 6px;
+  padding: 10px; overflow-x: auto; margin: 8px 0 0; font-size: 12px;
+}
+
+/* Footer */
+.foot {
+  display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 14px 20px; border-top: 1px solid var(--grey-lt);
+  font-size: 12px; color: var(--muted);
+}
+.foot a { color: var(--muted); }
+
+/* The maker's credit. It sits between the license and the source link, so it
+   reads as attribution rather than as another navigation target: quiet by
+   default, with only the name carrying weight. */
+.studio { display: inline-flex; align-items: center; gap: 6px; }
+.studio b { color: var(--slate-md); font-weight: 600; }
+.studio-mark { display: block; border-radius: 3px; opacity: .9; }
+a.studio { text-decoration: none; }
+a.studio:hover b { color: var(--accent); }
+
+/* Narrow screens */
+@media (max-width: 880px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .col-preview { order: -1; }
+  .preview-panel { position: static; }
+  .stage { min-height: 260px; }
+}

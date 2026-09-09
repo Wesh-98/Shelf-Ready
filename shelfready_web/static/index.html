@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ShelfReady — product image cleanup</title>
+<meta name="description" content="Clean product photo backgrounds, standardize the canvas and sharpen for Amazon, Shopify, eBay, Etsy and Walmart. Free, in your browser.">
+<link rel="icon" href="/static/mark.png">
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <img src="/static/mark.png" alt="" class="mark" width="28" height="28">
+    <span class="wordmark">Shelf<b>Ready</b></span>
+  </div>
+  <div class="topbar-actions">
+    <a class="ghost-btn" href="/download">Download for Windows</a>
+    <button class="ghost-btn" id="theme-btn" type="button" title="Switch theme">Theme</button>
+  </div>
+</header>
+
+<main class="layout">
+
+  <!-- ── Left: input and settings ───────────────────────────────────── -->
+  <section class="col col-controls">
+
+    <div class="panel">
+      <h2 class="panel-title">Image</h2>
+      <div id="dropzone" class="dropzone" tabindex="0" role="button"
+           aria-label="Choose an image or drop one here">
+        <input type="file" id="file-input" accept="image/*" hidden>
+        <div class="dz-inner">
+          <svg viewBox="0 0 24 24" class="dz-icon" aria-hidden="true">
+            <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"
+                  fill="none" stroke="currentColor" stroke-width="1.6"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <p class="dz-headline">Drop a product photo, or <span class="link">browse</span></p>
+          <p class="dz-hint" id="dz-hint">JPG · PNG · WEBP · AVIF · HEIC — up to 25 MB</p>
+        </div>
+      </div>
+      <p class="filename" id="filename" hidden></p>
+    </div>
+
+    <div class="panel">
+      <h2 class="panel-title">Processing</h2>
+
+      <div class="field-row">
+        <label for="platform">Marketplace</label>
+        <select id="platform"></select>
+        <span class="hint" id="platform-hint">Sets canvas size and quality</span>
+      </div>
+
+      <div class="grid-2" id="dropdowns"></div>
+
+      <div class="toggles" id="quick-toggles"></div>
+
+      <hr class="rule">
+
+      <div class="extras">
+        <div class="extra-row">
+          <label class="check"><input type="checkbox" id="add_shadow"><span>Soft shadow</span></label>
+          <input type="number" id="shadow_alpha" class="mini" min="0" max="100" value="70" disabled>
+          <span class="hint">alpha 0–100</span>
+        </div>
+        <div class="extra-row">
+          <label class="check"><input type="checkbox" id="qty_badge"><span>Quantity badge</span></label>
+          <input type="text" id="qty_badge_text" class="mini wide" placeholder="16 OZ" disabled>
+        </div>
+        <div class="extra-row">
+          <label class="check"><input type="checkbox" id="set_dpi"><span>Set DPI</span></label>
+          <input type="number" id="dpi_value" class="mini" min="1" max="2400" value="300" disabled>
+        </div>
+      </div>
+
+      <button class="disclosure" id="adv-toggle" type="button" aria-expanded="false">
+        <span class="caret">▸</span> Advanced settings
+      </button>
+      <div class="advanced" id="advanced" hidden></div>
+    </div>
+
+    <button class="run-btn" id="run-btn" type="button" disabled>Process image</button>
+    <div class="errors" id="errors" hidden></div>
+  </section>
+
+  <!-- ── Right: result ──────────────────────────────────────────────── -->
+  <section class="col col-preview">
+    <div class="panel preview-panel">
+      <div class="preview-head">
+        <h2 class="panel-title">Preview</h2>
+        <div class="seg" id="view-toggle" hidden>
+          <button type="button" data-view="before" class="seg-btn">Before</button>
+          <button type="button" data-view="after" class="seg-btn is-active">After</button>
+        </div>
+      </div>
+
+      <div class="stage" id="stage">
+        <p class="stage-empty" id="stage-empty">Your cleaned image will appear here.</p>
+        <img id="img-before" alt="Original image" hidden>
+        <img id="img-after" alt="Processed image" hidden>
+        <div class="spinner" id="spinner" hidden><span></span>Processing…</div>
+      </div>
+
+      <div class="result-bar" id="result-bar" hidden>
+        <a class="run-btn small" id="download-btn" download>Download JPG</a>
+        <span class="hint" id="result-meta"></span>
+      </div>
+
+      <details class="log" id="log-box" hidden>
+        <summary>Processing log</summary>
+        <pre id="log-text"></pre>
+      </details>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <span>ShelfReady <span id="version"></span> — MIT licensed.</span>
+  <a class="studio" id="studio" href="https://lefeelabs.site"
+     target="_blank" rel="noopener">Product of <b id="studio-name">LeFee Labs</b></a>
+  <a href="https://github.com/Wesh-98/Shelf-Ready">Source on GitHub</a>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

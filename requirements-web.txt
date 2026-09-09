@@ -1,0 +1,7 @@
+# Extra dependencies for the hosted web front end (shelfready_web).
+# Not needed to run the desktop GUI or the CLI.
+-r requirements.txt
+fastapi~=0.121.0
+uvicorn[standard]~=0.41.0
+python-multipart~=0.0.20
+slowapi~=0.1.9

@@ -1,0 +1,55 @@
+name: deploy
+
+# The site follows master. Tests gate the deploy: shipping a build that
+# fails the suite would take the public tool down, not just a local run.
+on:
+  push:
+    branches: [master]
+    paths:
+      - "image_toolkit.py"
+      - "shelfready_ui/**"
+      - "shelfready_web/**"
+      - "requirements*.txt"
+      - "Dockerfile"
+      - "fly.toml"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+concurrency:
+  # A newer commit makes an in-flight deploy pointless; let it win.
+  group: deploy-web
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # The web layer ships on Linux, so it is tested on Linux here — the
+    # desktop suite keeps its Windows matrix in tests.yml.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: python -m unittest discover -s tests
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy
+        run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

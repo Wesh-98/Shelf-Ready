@@ -1,0 +1,49 @@
+# ShelfReady on Fly.io.
+#
+# Two settings are deployment-specific and worth a look before the first
+# deploy: `app` must be globally unique, and `primary_region` decides how far
+# every upload travels. See README.md > Deploying the web app.
+
+# "shelfready" was already taken — app names are global across all of Fly.
+# This name is only ever seen as the CNAME target; the public address is
+# shelfready.lefeelabs.site.
+app = "shelfready-lefeelabs"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+
+  # The site is idle most of the time and every request is CPU-bound work
+  # that finishes in seconds, so paying for a warm machine buys little.
+  # A cold start costs the first visitor a few seconds.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  # Uploads are capped at 25 MB and one image can hold a slot for a while,
+  # so keep per-machine concurrency near the worker count rather than the
+  # HTTP default of hundreds.
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 4
+    hard_limit = 8
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  # 512 MB is not enough: numpy, scipy and Pillow together, plus the working
+  # arrays for a 4000px canvas, will OOM partway through a large job.
+  memory = "1gb"

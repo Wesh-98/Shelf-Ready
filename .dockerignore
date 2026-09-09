@@ -1,0 +1,19 @@
+# Keep the build context to what the image actually runs. The desktop app,
+# its build artifacts and the venv are all far larger than the web front end
+# and none of them belong in the container.
+.git/
+.github/
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+build/
+dist/
+samples/
+tests/
+assets/design/
+ShelfReady.spec
+ShelfReady_Unified_GUI.py
+*.bat
+Dockerfile
+.dockerignore

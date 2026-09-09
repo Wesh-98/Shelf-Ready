@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 # ShelfReady Unified GUI
-import os, sys, threading, tkinter as tk
+import os, sys, threading, webbrowser, tkinter as tk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk
 
 from shelfready_ui import assets, presets, settings, theme
-from shelfready_ui.version import __version__
+from shelfready_ui.version import __version__, STUDIO_NAME, STUDIO_URL
 from shelfready_ui.runner import run_toolkit
 
 PY = sys.executable
@@ -653,6 +653,16 @@ theme_btn = tk.Button(title_bar, text=_theme_btn_text(_current_theme),
                        font=("Arial", 9, "bold"), padx=10, pady=6)
 theme_btn.pack(side="right", padx=(0, 8))
 Tooltip(theme_btn, "Switch color theme")
+
+# Maker's credit, mirroring the web app's footer so both front ends carry the
+# same attribution. Packed after the theme button so it lands to its left.
+studio_lbl = tk.Label(title_bar, text=f"Product of {STUDIO_NAME}",
+                      bg=NAVY_DARK, fg=MUTED, font=("Arial", 8),
+                      cursor="hand2", pady=10)
+studio_lbl.pack(side="right", padx=(0, 14))
+studio_lbl.bind("<Button-1>", lambda _e: webbrowser.open(STUDIO_URL))
+Tooltip(studio_lbl, f"Open {STUDIO_URL}")
+
 _set_logo(_current_theme)
 
 # Columns

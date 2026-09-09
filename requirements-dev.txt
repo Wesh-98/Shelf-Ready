@@ -1,3 +1,8 @@
-# Extra tooling for building a release. Not needed to run from source.
+# Extra tooling for building a release and running the full test suite.
+# Not needed to run from source.
 -r requirements.txt
+-r requirements-web.txt
 pyinstaller>=6.11
+# TestClient talks to the app in-process over httpx; without it the web
+# tests skip themselves rather than fail.
+httpx~=0.28.1
